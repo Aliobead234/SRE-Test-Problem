@@ -1,0 +1,71 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-app
+spec:
+  replicas: 4  # Обеспечиваем минимальное количество подов для обработки пиковой нагрузки
+  selector:
+    matchLabels:
+      app: web-app
+  template:
+    metadata:
+      labels:
+        app: web-app
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - web-app
+              topologyKey: "kubernetes.io/hostname"
+      # Распределяем поды по разным нодам для повышения отказоустойчивости
+      
+      terminationGracePeriodSeconds: 60  # Даем время на корректное завершение работы
+      
+      containers:
+      - name: web-app
+        image: your-web-app-image:tag
+        resources:
+          requests:
+            cpu: 100m  # Запрашиваем минимальные ресурсы CPU
+            memory: 128Mi
+          limits:
+            cpu: 500m  # Устанавливаем лимит CPU для обработки начальных запросов
+            memory: 256Mi
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 10
+
+---
+apiVersion: autoscaling/v2beta1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: web-app-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: web-app
+  minReplicas: 2  # Минимальное количество подов для обработки ночной нагрузки
+  maxReplicas: 8  # Максимальное количество подов для обработки пиковой дневной нагрузки
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      targetAverageUtilization: 70
